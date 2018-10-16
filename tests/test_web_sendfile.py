@@ -75,7 +75,8 @@ def test_using_gzip_if_header_present_and_file_available(loop) -> None:
     request = make_mocked_request(
         'GET', 'http://python.org/logo.png', headers={
             hdrs.ACCEPT_ENCODING: 'gzip'
-        }
+        },
+        loop=loop
     )
 
     gz_filepath = mock.Mock()
@@ -101,7 +102,8 @@ def test_using_gzip_if_header_present_and_file_available(loop) -> None:
 def test_gzip_if_header_not_present_and_file_available(loop) -> None:
     request = make_mocked_request(
         'GET', 'http://python.org/logo.png', headers={
-        }
+        },
+        loop=loop
     )
 
     gz_filepath = mock.Mock()
@@ -127,7 +129,8 @@ def test_gzip_if_header_not_present_and_file_available(loop) -> None:
 def test_gzip_if_header_not_present_and_file_not_available(loop) -> None:
     request = make_mocked_request(
         'GET', 'http://python.org/logo.png', headers={
-        }
+        },
+        loop=loop
     )
 
     gz_filepath = mock.Mock()
@@ -154,7 +157,8 @@ def test_gzip_if_header_present_and_file_not_available(loop) -> None:
     request = make_mocked_request(
         'GET', 'http://python.org/logo.png', headers={
             hdrs.ACCEPT_ENCODING: 'gzip'
-        }
+        },
+        loop=loop
     )
 
     gz_filepath = mock.Mock()

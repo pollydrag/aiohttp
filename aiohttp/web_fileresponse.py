@@ -1,16 +1,16 @@
+import asyncio
 import mimetypes
 import os
 import pathlib
 
 from . import hdrs
-from .helpers import set_exception, set_result
+from .helpers import PY_37, set_exception, set_result
 from .http_writer import StreamWriter
 from .log import server_logger
 from .web_exceptions import (HTTPNotModified, HTTPOk, HTTPPartialContent,
                              HTTPPreconditionFailed,
                              HTTPRequestRangeNotSatisfiable)
 from .web_response import StreamResponse
-
 
 __all__ = ('FileResponse',)
 
@@ -58,8 +58,8 @@ class SendfileStreamWriter(StreamWriter):
         out_socket = self.transport.get_extra_info('socket').dup()
         out_socket.setblocking(False)
         out_fd = out_socket.fileno()
-        in_fd = fobj.fileno()
-        offset = fobj.tell()
+        in_fd = await self.loop.run_in_executor(None, fobj.fileno)
+        offset = await self.loop.run_in_executor(None, fobj.tell)
 
         loop = self.loop
         data = b''.join(self._sendfile_buffer)
@@ -135,13 +135,14 @@ class FileResponse(StreamResponse):
 
         chunk_size = self._chunk_size
 
-        chunk = fobj.read(chunk_size)
+        chunk = await request.loop.run_in_executor(None, fobj.read, chunk_size)
         while True:
             await writer.write(chunk)
             count = count - chunk_size
             if count <= 0:
                 break
-            chunk = fobj.read(min(chunk_size, count))
+            chunk = await request.loop.run_in_executor(None, fobj.read,
+                                                       min(chunk_size, count))
 
         await writer.drain()
         return writer
@@ -276,8 +277,32 @@ class FileResponse(StreamResponse):
             self.headers[hdrs.CONTENT_RANGE] = 'bytes {0}-{1}/{2}'.format(
                 start, start + count - 1, file_size)
 
-        with filepath.open('rb') as fobj:
+        async with async_open(filepath, 'rb', loop=request.loop) as fobj:
             if start:  # be aware that start could be None or int=0 here.
-                fobj.seek(start)
+                await request.loop.run_in_executor(None, fobj.seek, start)
 
             return await self._sendfile(request, fobj, count)
+
+
+if PY_37:
+    import contextlib
+
+    @contextlib.asynccontextmanager
+    async def async_open(filepath: pathlib.Path, mode='r', loop=None):
+        loop = loop or asyncio.get_event_loop()
+        fobj = await loop.run_in_executor(None, filepath.open, mode)
+        yield fobj
+        await loop.run_in_executor(None, fobj.close)
+else:
+    class async_open:
+        def __init__(self, filepath: pathlib.Path, mode='r', loop=None):
+            self.loop = loop or asyncio.get_event_loop()
+            self.fobj = None
+            self._coro = self.loop.run_in_executor(None, filepath.open, mode)
+
+        async def __aenter__(self):
+            self.fobj = await self._coro
+            return self.fobj
+
+        async def __aexit__(self, exc_type, exc, tb):
+            await self.loop.run_in_executor(None, self.fobj.close)
